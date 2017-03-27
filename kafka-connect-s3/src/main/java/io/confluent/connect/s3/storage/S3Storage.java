@@ -17,6 +17,7 @@
 package io.confluent.connect.s3.storage;
 
 import com.amazonaws.PredefinedClientConfigurations;
+import com.amazonaws.Protocol;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
@@ -63,19 +64,21 @@ public class S3Storage implements Storage<S3SinkConnectorConfig, ObjectListing> 
     AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard()
                                         .withAccelerateModeEnabled(config.getBoolean(WAN_MODE_CONFIG))
                                         .withPathStyleAccessEnabled(true)
+//                                        .withPayloadSigningEnabled(true)
                                         .withCredentials(config.getCredentialsProvider())
                                         .withClientConfiguration(
                                             PredefinedClientConfigurations.defaultConfig()
+                                                    .withProtocol(Protocol.HTTP)
                                                 .withUserAgentPrefix(
                                                     String.format(VERSION_FORMAT, Version.getVersion())));
 
+    String region = config.getString(REGION_CONFIG);
     if (StringUtils.isBlank(url)) {
-      String region = config.getString(REGION_CONFIG);
       builder = "us-east-1".equals(region) ?
                     builder.withRegion(Regions.US_EAST_1):
                     builder.withRegion(region);
     } else {
-      builder = builder.withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(url, ""));
+      builder = builder.withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(url, region));
     }
 
     return builder.build();
@@ -107,6 +110,7 @@ public class S3Storage implements Storage<S3SinkConnectorConfig, ObjectListing> 
    * @throws AmazonServiceException
    */
   public boolean bucketExists() {
+    System.out.println("S3Storage.bucketExists: " + bucketName);
     return StringUtils.isNotBlank(bucketName) && s3.doesBucketExist(bucketName);
   }
 

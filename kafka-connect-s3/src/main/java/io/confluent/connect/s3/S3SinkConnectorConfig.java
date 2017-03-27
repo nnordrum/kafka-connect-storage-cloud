@@ -18,6 +18,7 @@ package io.confluent.connect.s3;
 
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.regions.RegionUtils;
 import com.amazonaws.regions.Regions;
 import org.apache.kafka.common.config.AbstractConfig;
@@ -29,12 +30,10 @@ import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.connect.errors.ConnectException;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.io.File;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.util.*;
 
 import io.confluent.connect.storage.StorageSinkConnectorConfig;
 import io.confluent.connect.storage.common.ComposableConfig;
@@ -57,8 +56,12 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
   private static final boolean WAN_MODE_DEFAULT = false;
 
   public static final String CREDENTIALS_PROVIDER_CLASS_CONFIG = "s3.credentials.provider.class";
-  public static final Class<? extends AWSCredentialsProvider> CREDENTIALS_PROVIDER_CLASS_DEFAULT =
-      DefaultAWSCredentialsProviderChain.class;
+  public static final Class<? extends AWSCredentialsProvider> CREDENTIALS_PROVIDER_CLASS_DEFAULT = DefaultAWSCredentialsProviderChain.class;
+
+  public static final String CREDENTIALS_PROVIDER_PROFILES_FILE_CONFIG = "s3.credentials.provider.profiles.file";
+  public static final String CREDENTIALS_PROVIDER_PROFILES_FILE_DEFAULT = null;
+  public static final String CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG = "s3.credentials.provider.profile.name";
+  public static final String CREDENTIALS_PROVIDER_PROFILE_NAME_DEFAULT = null;
 
   public static final String REGION_CONFIG = "s3.region";
   public static final String REGION_DEFAULT = Regions.DEFAULT_REGION.getName();
@@ -119,6 +122,29 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
                         ++orderInGroup,
                         Width.LONG,
                         "AWS Credentials Provider Class");
+
+      CONFIG_DEF.define(CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG,
+                        Type.STRING,
+                        CREDENTIALS_PROVIDER_PROFILE_NAME_DEFAULT,
+                        new ProfileNameValidator(),
+                        Importance.LOW,
+                        "The name of a configuration profile in the specified configuration file",
+                        group,
+                        ++orderInGroup,
+                        Width.LONG,
+                        "AWS Credentials Profile Name");
+
+      CONFIG_DEF.define(CREDENTIALS_PROVIDER_PROFILES_FILE_CONFIG,
+                        Type.STRING,
+                        CREDENTIALS_PROVIDER_PROFILES_FILE_DEFAULT,
+                        new ProfilesConfigFilePathValidator(),
+                        Importance.LOW,
+                        "The profile configuration file containing the profiles used by this "
+                          + "credentials provider or null to defer load to first use.",
+                        group,
+                        ++orderInGroup,
+                        Width.LONG,
+                        "AWS Credentials Profiles Config File Path");
 
       CONFIG_DEF.define(SSEA_CONFIG,
                         Type.STRING,
@@ -184,9 +210,24 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
   @SuppressWarnings("unchecked")
   public AWSCredentialsProvider getCredentialsProvider() {
     try {
-      return ((Class<? extends AWSCredentialsProvider>)
-                  getClass(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG)).newInstance();
-    } catch (IllegalAccessException | InstantiationException e) {
+      final Class<? extends AWSCredentialsProvider> credentialsProviderClass =
+              (Class<? extends AWSCredentialsProvider>) getClass(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG);
+      final List<Class<?>> classes = new ArrayList<>(2);
+      final List<String> params = new ArrayList<>(2);
+      if (ProfileCredentialsProvider.class.isAssignableFrom(credentialsProviderClass)) {
+        final String profilesConfigFilePath = getString(CREDENTIALS_PROVIDER_PROFILES_FILE_CONFIG);
+        if (profilesConfigFilePath != null) {
+          classes.add(String.class);
+          params.add(profilesConfigFilePath);
+        }
+        final String profileName = getString(CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG);
+        if (profileName != null) {
+          classes.add(String.class);
+          params.add(profileName);
+        }
+      }
+      return credentialsProviderClass.getConstructor(classes.toArray(new Class<?>[0])).newInstance(params.toArray());
+    } catch (IllegalAccessException | InstantiationException | NoSuchMethodException | InvocationTargetException e) {
       throw new ConnectException("Invalid class for: " + S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG, e);
     }
   }
@@ -283,6 +324,36 @@ public class S3SinkConnectorConfig extends StorageSinkConnectorConfig {
     public String toString() {
       return "Any class implementing: " + AWSCredentialsProvider.class;
     }
+  }
+
+  private static class ProfileNameValidator implements ConfigDef.Validator {
+    @Override
+    public void ensureValid(String name, Object profileName) {
+      // profileName is optional
+    }
+
+    @Override
+    public String toString() {
+      return "A valid AWS profile name.";
+    }
+  }
+
+  private static class ProfilesConfigFilePathValidator implements ConfigDef.Validator {
+
+    @Override
+    public void ensureValid(String name, Object configFilePath) {
+      // TODO if configFilePath is set, profileName must also be set--no idea how to do dependent ConfigKey validation
+      if (configFilePath != null && configFilePath instanceof String
+              && new File((String) configFilePath).exists()) {
+        return;
+      }
+//      throw new ConfigException(name, configFilePath, "Unable to find file for profile config at " + configFilePath);
+    }
+    @Override
+    public String toString() {
+      return "A valid AWS profiles config file path.";
+    }
+
   }
 
   public static ConfigDef getConfig() {

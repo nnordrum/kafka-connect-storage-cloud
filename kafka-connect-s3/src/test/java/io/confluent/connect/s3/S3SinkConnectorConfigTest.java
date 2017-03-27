@@ -16,6 +16,8 @@
 
 package io.confluent.connect.s3;
 
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -46,6 +48,40 @@ public class S3SinkConnectorConfigTest extends S3SinkConnectorTestBase {
     properties.remove(StorageCommonConfig.STORE_URL_CONFIG);
     connectorConfig = new S3SinkConnectorConfig(properties);
     assertNull(connectorConfig.getString(StorageCommonConfig.STORE_URL_CONFIG));
+  }
+
+  @Test
+  public void testProfileName() throws Exception {
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG, ProfileCredentialsProvider.class.getName());
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG, "stage");
+    connectorConfig = new S3SinkConnectorConfig(properties);
+    assertEquals("stage", connectorConfig.getString(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG));
+  }
+
+  @Test
+  public void testProfilesFile() throws Exception {
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG, ProfileCredentialsProvider.class.getName());
+    final String fileInResources = this.getClass().getResource("/log4j.properties").getFile(); // just testing for the presence of the file
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILES_FILE_CONFIG, fileInResources);
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG, "stage");
+    connectorConfig = new S3SinkConnectorConfig(properties);
+    assertEquals(fileInResources, connectorConfig.getString(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILES_FILE_CONFIG));
+    assertEquals("stage", connectorConfig.getString(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG));
+  }
+
+  @Test
+  public void testProfileCredentials() throws Exception {
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG, ProfileCredentialsProvider.class.getName());
+    final String fileInResources = this.getClass().getResource("/log4j.properties").getFile(); // just testing for the presence of the file
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILES_FILE_CONFIG, fileInResources);
+    properties.put(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG, "stage");
+    connectorConfig = new S3SinkConnectorConfig(properties);
+    assertEquals("stage", connectorConfig.getString(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_PROFILE_NAME_CONFIG));
+    assertEquals(ProfileCredentialsProvider.class, connectorConfig.getClass(S3SinkConnectorConfig.CREDENTIALS_PROVIDER_CLASS_CONFIG));
+    // TODO everything is private--update this later if these become exposed in the future
+//    ProfileCredentialsProvider credentialsProvider = (ProfileCredentialsProvider) connectorConfig.getCredentialsProvider();
+//    assertEquals("stage", credentialsProvider.getProfileName());
+//    assertEquals(fileInResources, credentialsProvider.getProfilesConfigFile().getProfileFile());
   }
 
 }

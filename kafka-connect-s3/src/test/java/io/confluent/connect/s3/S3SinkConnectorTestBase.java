@@ -85,7 +85,7 @@ public class S3SinkConnectorTestBase extends StorageSinkTestBase {
     AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard()
                .withAccelerateModeEnabled(config.getBoolean(S3SinkConnectorConfig.WAN_MODE_CONFIG))
                .withPathStyleAccessEnabled(true)
-               .withCredentials(new DefaultAWSCredentialsProviderChain());
+               .withCredentials(config.getCredentialsProvider());
 
     builder = url == null ?
                   builder.withRegion(config.getString(S3SinkConnectorConfig.REGION_CONFIG)) :
